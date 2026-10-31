@@ -6,12 +6,16 @@ ksp = "2.3.12"
 hilt = "2.60.1"
 androidxHilt = "1.4.0"
 composeBom = "2026.09.00"
+# The BOM pins material3 1.4.0. SegmentedListItem (the Expressive grouped list) is only in 1.5.0 betas.
+material3 = "1.5.0-beta01"
 activity = "1.13.0"
 navigation = "2.10.2"
 lifecycle = "2.11.0"
 coreKtx = "1.19.1"
 splashscreen = "1.2.0"
 palette = "1.0.0"
+# Kotlin port of material-color-utilities: Now Playing's scheme from the cover. Checked on Maven Central 2026-10-25.
+materialColorUtilities = "5.0.1"
 media3 = "1.11.1"
 room = "2.8.5"
 datastore = "1.2.1"
@@ -43,6 +47,7 @@ androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-ru
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 androidx-lifecycle-process = { module = "androidx.lifecycle:lifecycle-process", version.ref = "lifecycle" }
 androidx-palette = { module = "androidx.palette:palette-ktx", version.ref = "palette" }
+material-color-utilities = { module = "com.materialkolor:material-color-utilities", version.ref = "materialColorUtilities" }
 
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
 compose-ui = { module = "androidx.compose.ui:ui" }
@@ -53,8 +58,8 @@ compose-ui-text-google-fonts = { module = "androidx.compose.ui:ui-text-google-fo
 compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
 compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 compose-foundation = { module = "androidx.compose.foundation:foundation" }
-compose-material3 = { module = "androidx.compose.material3:material3" }
-compose-material3-navigation-suite = { module = "androidx.compose.material3:material3-adaptive-navigation-suite" }
+compose-material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
+compose-material3-navigation-suite = { module = "androidx.compose.material3:material3-adaptive-navigation-suite", version.ref = "material3" }
 
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
 hilt-compiler = { module = "com.google.dagger:hilt-compiler", version.ref = "hilt" }

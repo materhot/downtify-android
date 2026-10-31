@@ -1,116 +1,80 @@
 package com.henriquesebastiao.downtify.feature.player
 
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.tooling.preview.PreviewLightDark
-import androidx.compose.ui.unit.dp
 import com.henriquesebastiao.downtify.R
-import com.henriquesebastiao.downtify.core.designsystem.component.CoverArt
+import com.henriquesebastiao.downtify.core.designsystem.component.CoverTheme
 import com.henriquesebastiao.downtify.core.designsystem.component.DowntifyIcons
-import com.henriquesebastiao.downtify.core.designsystem.component.rememberCoverColors
+import com.henriquesebastiao.downtify.core.designsystem.component.MiniPlayerButton
+import com.henriquesebastiao.downtify.core.designsystem.component.MiniPlayerCard
+import com.henriquesebastiao.downtify.core.designsystem.component.PhonePreviews
 import com.henriquesebastiao.downtify.core.designsystem.theme.DowntifyTheme
 import com.henriquesebastiao.downtify.core.designsystem.theme.Spacing
-import com.henriquesebastiao.downtify.core.network.ServerUrls
 import com.henriquesebastiao.downtify.core.player.PlayerState
-import com.henriquesebastiao.downtify.ui.common.LocalCoverUrls
+import com.henriquesebastiao.downtify.core.player.PlayingStream
 import com.henriquesebastiao.downtify.ui.common.PreviewData
 
-/** Sits above the navigation bar while something is loaded; tapping it opens Now Playing. */
+/**
+ * Sits above the navigation bar while something is loaded, in the cover's colors; tapping it
+ * opens Now Playing. Its buttons are the transport only, as on Now Playing: previous, play/pause
+ * and next, or an episode's skips back and forward. Saving a stream to the server lives on Now
+ * Playing. [attached] joins it to the floating bar right under it. [modifier] is the card's (the
+ * caller sets its margins), [coverModifier] its cover's.
+ */
 @Composable
-fun MiniPlayer(state: PlayerState, onOpen: () -> Unit, onTogglePlay: () -> Unit, modifier: Modifier = Modifier) {
+fun MiniPlayer(
+    state: PlayerState,
+    onOpen: () -> Unit,
+    onTogglePlay: () -> Unit,
+    modifier: Modifier = Modifier,
+    onPrevious: () -> Unit = {},
+    onNext: () -> Unit = {},
+    onSkipBack: () -> Unit = {},
+    onSkipForward: () -> Unit = {},
+    attached: Boolean = false,
+    coverModifier: Modifier = Modifier,
+) {
     val track = state.track
     val episode = state.episode
-    if (track == null && episode == null) return
-    val coverUrl = episode?.artworkUrl?.ifBlank { null }
-        ?: track?.let { LocalCoverUrls.current.track(it.id.takeIf { _ -> it.hasCover }, ServerUrls.COVER_SMALL) }
-    val colors = rememberCoverColors(coverUrl)
-    Surface(
-        color = colors.surface,
-        contentColor = colors.onSurface,
-        shape = MaterialTheme.shapes.large,
-        shadowElevation = 6.dp,
-        modifier = modifier.padding(horizontal = Spacing.sm, vertical = Spacing.xs).fillMaxWidth().height(64.dp),
-    ) {
-        Box {
-            Row(
-                Modifier.padding(start = Spacing.sm, end = Spacing.xs),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Spacing.xs),
-            ) {
-                Row(
-                    Modifier
-                        .weight(1f)
-                        .clickable(
-                            onClickLabel = stringResource(R.string.player_open),
-                            role = Role.Button,
-                            onClick = onOpen,
-                        ),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.md),
-                ) {
-                    CoverArt(url = coverUrl, contentDescription = null, modifier = Modifier.size(48.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            track?.displayTitle ?: episode?.title.orEmpty(),
-                            style = MaterialTheme.typography.titleSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            track?.displayArtist ?: episode?.showName.orEmpty(),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = colors.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-                IconButton(onClick = onTogglePlay) {
-                    Icon(
-                        painterResource(if (state.isPlaying) DowntifyIcons.Pause else DowntifyIcons.Play),
-                        contentDescription = stringResource(
-                            if (state.isPlaying) R.string.player_pause else R.string.player_play,
-                        ),
-                    )
-                }
+    val stream = state.stream
+    if (track == null && episode == null && stream == null) return
+    val coverUrl = playingCoverUrl(state)
+    CoverTheme(coverUrl) {
+        MiniPlayerCard(
+            title = track?.displayTitle ?: stream?.title ?: episode?.title.orEmpty(),
+            subtitle = track?.displayArtist ?: stream?.artist ?: episode?.showName.orEmpty(),
+            coverUrl = coverUrl,
+            onOpen = onOpen,
+            openLabel = stringResource(R.string.player_open),
+            attached = attached,
+            coverModifier = coverModifier,
+            modifier = modifier,
+        ) {
+            if (episode != null) {
+                MiniPlayerButton(DowntifyIcons.SkipBack, stringResource(R.string.player_skip_back), onSkipBack)
+            } else {
+                MiniPlayerButton(DowntifyIcons.Previous, stringResource(R.string.player_previous), onPrevious)
             }
-            LinearProgressIndicator(
-                progress = { state.progress },
-                color = colors.onSurface,
-                trackColor = colors.onSurface.copy(alpha = 0.18f),
-                strokeCap = StrokeCap.Round,
-                gapSize = 0.dp,
-                drawStopIndicator = {},
-                modifier = Modifier.align(
-                    Alignment.BottomCenter,
-                ).padding(horizontal = Spacing.md).fillMaxWidth().height(2.dp),
+            MiniPlayerButton(
+                if (state.isPlaying) DowntifyIcons.Pause else DowntifyIcons.Play,
+                stringResource(if (state.isPlaying) R.string.player_pause else R.string.player_play),
+                onTogglePlay,
+                main = true,
+                playing = state.isPlaying,
             )
+            if (episode != null) {
+                MiniPlayerButton(DowntifyIcons.SkipForward, stringResource(R.string.player_skip_forward), onSkipForward)
+            } else {
+                MiniPlayerButton(DowntifyIcons.Next, stringResource(R.string.player_next), onNext)
+            }
         }
     }
 }
 
-@PreviewLightDark
+@PhonePreviews
 @Composable
 private fun MiniPlayerPreview() {
     DowntifyTheme {
@@ -124,6 +88,23 @@ private fun MiniPlayerPreview() {
                 ),
                 onOpen = {},
                 onTogglePlay = {},
+                modifier = Modifier.padding(Spacing.screen),
+            )
+        }
+    }
+}
+
+@PhonePreviews
+@Composable
+private fun MiniPlayerStreamPreview() {
+    DowntifyTheme {
+        Surface {
+            MiniPlayer(
+                state = PlayerState(stream = PlayingStream("id", "A stream with a long title", "Artist", "", "{}")),
+                onOpen = {},
+                onTogglePlay = {},
+                attached = true,
+                modifier = Modifier.padding(Spacing.screen),
             )
         }
     }

@@ -9,17 +9,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBar
@@ -28,43 +28,56 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.henriquesebastiao.downtify.R
 import com.henriquesebastiao.downtify.core.designsystem.component.DowntifyIcons
 import com.henriquesebastiao.downtify.core.designsystem.component.EmptyState
+import com.henriquesebastiao.downtify.core.designsystem.component.PageHeader
+import com.henriquesebastiao.downtify.core.designsystem.component.PhonePreviews
 import com.henriquesebastiao.downtify.core.designsystem.theme.DowntifyTheme
+import com.henriquesebastiao.downtify.core.designsystem.theme.ListStyle
 import com.henriquesebastiao.downtify.core.designsystem.theme.Spacing
 import com.henriquesebastiao.downtify.core.model.RemoteAlbum
 import com.henriquesebastiao.downtify.core.model.RemoteSong
 import com.henriquesebastiao.downtify.core.model.ResolvedLink
 import com.henriquesebastiao.downtify.core.model.ServerDownloadProgress
+import com.henriquesebastiao.downtify.core.model.StreamVideo
+import com.henriquesebastiao.downtify.core.model.Track
 import com.henriquesebastiao.downtify.core.network.ServerUrls
-import com.henriquesebastiao.downtify.ui.common.CoverRow
+import com.henriquesebastiao.downtify.feature.player.LyricsSheet
+import com.henriquesebastiao.downtify.ui.common.CoverItem
 import com.henriquesebastiao.downtify.ui.common.LocalCoverUrls
 import com.henriquesebastiao.downtify.ui.common.PreviewData
-import com.henriquesebastiao.downtify.ui.common.TrackRow
+import com.henriquesebastiao.downtify.ui.common.TrackActions
+import com.henriquesebastiao.downtify.ui.common.TrackItem
 import com.henriquesebastiao.downtify.ui.common.albumSubtitle
 import com.henriquesebastiao.downtify.ui.common.artistSubtitle
+import com.henriquesebastiao.downtify.ui.common.plusBottomBars
 import com.henriquesebastiao.downtify.ui.common.songsCount
 
 data class SearchNavigation(
     val onAlbum: (String) -> Unit = {},
     val onArtist: (String) -> Unit = {},
     val onPlaylist: (String) -> Unit = {},
+    val onSimilar: (artist: String, title: String) -> Unit = { _, _ -> },
+    /** Open a server link (a release from an artist page) as a search. */
+    val onOpenLink: (String) -> Unit = {},
 )
 
 @Composable
@@ -92,7 +105,7 @@ fun SearchRoute(
                         resources.getString(R.string.search_queued_one, message.title)
                     }
 
-                    SearchMessage.NoPreview -> resources.getString(R.string.search_no_preview)
+                    SearchMessage.NoStream -> resources.getString(R.string.search_no_stream)
 
                     SearchMessage.RequestFailed -> resources.getString(R.string.search_request_failed)
 
@@ -108,25 +121,36 @@ fun SearchRoute(
         onQueryChange = viewModel::onQueryChange,
         onFilterChange = viewModel::onFilterChange,
         onPlaySong = viewModel::playSong,
+        trackActions = TrackActions(onAddToQueue = viewModel::addToQueue),
         remote = RemoteActions(
             onRetry = viewModel::retry,
-            onPreview = viewModel::togglePreview,
+            onPlay = viewModel::playRemote,
             onDownload = viewModel::download,
             onDownloadAlbum = viewModel::downloadAlbum,
             onDownloadLink = viewModel::downloadLink,
+            onPlayLink = viewModel::playLink,
+            onToggleLike = viewModel::toggleLike,
+            onShowLyrics = viewModel::showLyrics,
         ),
         snackbarHostState = snackbar,
         modifier = modifier,
     )
+    val lyrics by viewModel.lyricsFor.collectAsStateWithLifecycle()
+    lyrics?.let {
+        LyricsSheet(lyrics = it, onDismiss = viewModel::hideLyrics)
+    }
 }
 
 /** What the server's results can do. */
 data class RemoteActions(
     val onRetry: () -> Unit = {},
-    val onPreview: (RemoteSong) -> Unit = {},
+    val onPlay: (RemoteSong, List<RemoteSong>) -> Unit = { _, _ -> },
     val onDownload: (RemoteSong) -> Unit = {},
     val onDownloadAlbum: (RemoteAlbum) -> Unit = {},
     val onDownloadLink: (ResolvedLink) -> Unit = {},
+    val onPlayLink: (ResolvedLink) -> Unit = {},
+    val onToggleLike: (Track) -> Unit = {},
+    val onShowLyrics: (Track) -> Unit = {},
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -138,16 +162,26 @@ fun SearchScreen(
     onQueryChange: (String) -> Unit,
     onFilterChange: (SearchFilter) -> Unit,
     onPlaySong: (Int) -> Unit,
+    trackActions: TrackActions = TrackActions(),
     modifier: Modifier = Modifier,
     remote: RemoteActions = RemoteActions(),
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
+    val scrollBehavior = TopAppBarDefaults.pinnedScrollBehavior()
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
         contentWindowInsets = WindowInsets(0),
+        topBar = {
+            // A tab, as the library: its title in primary.
+            PageHeader(
+                title = stringResource(R.string.nav_search),
+                titleColor = MaterialTheme.colorScheme.primary,
+                scrollBehavior = scrollBehavior,
+            )
+        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).statusBarsPadding()) {
+        Column(Modifier.fillMaxSize().padding(padding)) {
             SearchBar(
                 inputField = {
                     SearchBarDefaults.InputField(
@@ -156,7 +190,13 @@ fun SearchScreen(
                         onSearch = {},
                         expanded = false,
                         onExpandedChange = {},
-                        placeholder = { Text(stringResource(R.string.search_placeholder)) },
+                        placeholder = {
+                            Text(
+                                stringResource(R.string.search_placeholder),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        },
                         leadingIcon = { Icon(painterResource(DowntifyIcons.Search), contentDescription = null) },
                         trailingIcon = if (query.isNotEmpty()) {
                             {
@@ -174,6 +214,7 @@ fun SearchScreen(
                 },
                 expanded = false,
                 onExpandedChange = {},
+                windowInsets = WindowInsets(0),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = Spacing.screen),
             ) {}
             LazyRow(
@@ -200,7 +241,7 @@ fun SearchScreen(
                     )
                 }
             }
-            Results(query, state, navigation, onPlaySong, remote)
+            Results(query, state, navigation, onPlaySong, trackActions, remote)
         }
     }
 }
@@ -211,6 +252,7 @@ private fun Results(
     state: SearchUiState,
     navigation: SearchNavigation,
     onPlaySong: (Int) -> Unit,
+    trackActions: TrackActions,
     remote: RemoteActions,
 ) {
     val covers = LocalCoverUrls.current
@@ -218,19 +260,27 @@ private fun Results(
     val showServer = state.isLink || state.filter == SearchFilter.All || state.filter == SearchFilter.Songs ||
         state.filter == SearchFilter.Albums
     when {
-        query.isBlank() -> EmptyState(icon = DowntifyIcons.Search, title = stringResource(R.string.search_prompt))
+        query.isBlank() -> EmptyState(
+            icon = DowntifyIcons.Search,
+            title = stringResource(R.string.search_prompt),
+        )
 
         results.isEmpty && !showServer && state.query == query -> EmptyState(
             icon = DowntifyIcons.Search,
             title = stringResource(R.string.search_no_results, query),
         )
 
-        else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = Spacing.xl)) {
+        else -> LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = Spacing.xl).plusBottomBars(),
+            verticalArrangement = Arrangement.spacedBy(ListStyle.Separated.gap),
+        ) {
             if (!results.isEmpty) {
                 item(key = "library") { SectionTitle(stringResource(R.string.search_in_library)) }
             }
             items(results.albums, key = { "album:${it.id}" }) { album ->
-                CoverRow(
+                CoverItem(
+                    modifier = Modifier.padding(horizontal = Spacing.screen),
                     title = album.title,
                     subtitle = stringResource(
                         R.string.album_subtitle,
@@ -242,7 +292,8 @@ private fun Results(
                 )
             }
             items(results.artists, key = { "artist:${it.id}" }) { artist ->
-                CoverRow(
+                CoverItem(
+                    modifier = Modifier.padding(horizontal = Spacing.screen),
                     title = artist.name,
                     subtitle = stringResource(
                         R.string.album_subtitle,
@@ -256,7 +307,8 @@ private fun Results(
                 )
             }
             items(results.playlists, key = { "playlist:${it.name}" }) { playlist ->
-                CoverRow(
+                CoverItem(
+                    modifier = Modifier.padding(horizontal = Spacing.screen),
                     title = playlist.name,
                     subtitle = stringResource(
                         R.string.album_subtitle,
@@ -269,20 +321,28 @@ private fun Results(
                 )
             }
             itemsIndexed(results.songs, key = { _, t -> "song:${t.id}" }) { index, track ->
-                TrackRow(
+                TrackItem(
                     track = track,
                     onClick = { onPlaySong(index) },
+                    modifier = Modifier.padding(horizontal = Spacing.screen),
                     coverUrl = covers.track(track.id.takeIf { track.hasCover }, ServerUrls.COVER_SMALL),
                     isCurrent = track.id == state.currentTrackId,
                     isPlaying = state.isPlaying,
+                    actions = trackActions,
                 )
             }
-            if (showServer) serverSection(query, state, remote, divider = !results.isEmpty)
+            if (showServer) serverSection(query, state, navigation, remote, divider = !results.isEmpty)
         }
     }
 }
 
-private fun LazyListScope.serverSection(query: String, state: SearchUiState, remote: RemoteActions, divider: Boolean) {
+private fun LazyListScope.serverSection(
+    query: String,
+    state: SearchUiState,
+    navigation: SearchNavigation,
+    remote: RemoteActions,
+    divider: Boolean,
+) {
     val server = state.server
     if (server == ServerResults.Idle) return
     val showSongs = state.isLink || state.filter != SearchFilter.Albums
@@ -296,6 +356,7 @@ private fun LazyListScope.serverSection(query: String, state: SearchUiState, rem
         ServerResults.Loading -> item(key = "server-loading") {
             StatusLine(
                 stringResource(if (state.isLink) R.string.search_link_loading else R.string.search_server_loading),
+                loading = true,
             )
         }
 
@@ -311,24 +372,30 @@ private fun LazyListScope.serverSection(query: String, state: SearchUiState, rem
             if (server.songs.isEmpty() && server.albums.isEmpty()) {
                 item(key = "server-nothing") { StatusLine(stringResource(R.string.search_server_nothing, query)) }
             }
-            if (showSongs) remoteSongs(server.songs, state, remote)
-            if (showAlbums) remoteAlbums(server.albums, state, remote)
+            if (showSongs) remoteSongs(server.songs, state, navigation, remote)
+            if (showAlbums) remoteAlbums(server.albums, state, navigation, remote)
         }
 
-        is ServerResults.Link -> linkResults(server.link, state, remote)
+        is ServerResults.Link -> linkResults(server.link, state, navigation, remote)
     }
 }
 
-private fun LazyListScope.linkResults(link: ResolvedLink, state: SearchUiState, remote: RemoteActions) {
+private fun LazyListScope.linkResults(
+    link: ResolvedLink,
+    state: SearchUiState,
+    navigation: SearchNavigation,
+    remote: RemoteActions,
+) {
     item(key = "link") {
         LinkHeader(
             link = link,
             requested = link.tracks.isNotEmpty() && link.tracks.all { it.id in state.jobs },
             onDownload = { remote.onDownloadLink(link) },
+            onPlay = { remote.onPlayLink(link) },
         )
     }
-    remoteSongs(link.tracks, state, remote)
-    remoteAlbums(link.albums, state, remote)
+    remoteSongs(link.tracks, state, navigation, remote)
+    remoteAlbums(link.albums, state, navigation, remote)
 }
 
 @Composable
@@ -346,25 +413,46 @@ private fun FailedLine(status: Int?, isLink: Boolean, onRetry: () -> Unit) {
     )
 }
 
-private fun LazyListScope.remoteSongs(songs: List<RemoteSong>, state: SearchUiState, remote: RemoteActions) {
+private fun LazyListScope.remoteSongs(
+    songs: List<RemoteSong>,
+    state: SearchUiState,
+    navigation: SearchNavigation,
+    remote: RemoteActions,
+) {
     items(songs, key = { "remote:${it.id}" }) { song ->
+        val libraryTrack = state.library?.findSong(song)
+        val playing = state.playingStreamId?.let { StreamVideo.videoIdOf(song) == it } == true
         RemoteSongRow(
+            modifier = Modifier.padding(horizontal = Spacing.screen),
             song = song,
             job = state.jobs[song.id],
-            preview = state.preview,
-            lookingUp = state.previewLookup == song.id,
-            onPreview = { remote.onPreview(song) },
+            playing = playing,
+            resolving = state.resolvingStreamId == song.id,
+            onPlay = { remote.onPlay(song, songs) },
+            onSimilar = { navigation.onSimilar(song.artist, song.title) },
             onDownload = { remote.onDownload(song) },
+            libraryTrack = libraryTrack,
+            isLiked = libraryTrack != null && libraryTrack.id in state.likedIds,
+            isPlaying = playing && state.isPlaying,
+            onToggleLike = remote.onToggleLike,
+            onShowLyrics = remote.onShowLyrics,
         )
     }
 }
 
-private fun LazyListScope.remoteAlbums(albums: List<RemoteAlbum>, state: SearchUiState, remote: RemoteActions) {
+private fun LazyListScope.remoteAlbums(
+    albums: List<RemoteAlbum>,
+    state: SearchUiState,
+    navigation: SearchNavigation,
+    remote: RemoteActions,
+) {
     items(albums, key = { "remote-album:${it.id}" }) { album ->
         RemoteAlbumRow(
+            modifier = Modifier.padding(horizontal = Spacing.screen),
             album = album,
             progress = state.requestedAlbums[album.id]?.let { ServerDownloadProgress.of(it, state.jobs) },
             onDownload = { remote.onDownloadAlbum(album) },
+            onOpen = { if (album.url.isNotBlank()) navigation.onOpenLink(album.url) },
         )
     }
 }
@@ -373,50 +461,57 @@ private fun LazyListScope.remoteAlbums(albums: List<RemoteAlbum>, state: SearchU
 private fun SectionTitle(text: String) {
     Text(
         text,
-        style = MaterialTheme.typography.titleSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = Spacing.screen, vertical = Spacing.sm).semantics { heading() },
+        style = MaterialTheme.typography.titleMedium,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier
+            .padding(start = Spacing.screen + Spacing.xs, end = Spacing.screen, top = Spacing.sm)
+            .semantics { heading() },
     )
 }
 
+/** Where the server's results start: what they are, and that they aren't on the server yet. */
 @Composable
 private fun ServerHeader(divider: Boolean) {
-    Column(Modifier.padding(top = if (divider) Spacing.md else 0.dp)) {
-        if (divider) HorizontalDivider(Modifier.padding(horizontal = Spacing.screen))
-        Row(
-            Modifier.padding(start = Spacing.screen, end = Spacing.screen, top = Spacing.lg),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(Spacing.sm),
-        ) {
+    Column(
+        Modifier.padding(
+            start = Spacing.screen + Spacing.xs,
+            end = Spacing.screen,
+            top = if (divider) Spacing.lg else 0.dp,
+        ),
+        verticalArrangement = Arrangement.spacedBy(Spacing.xs),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(Spacing.sm)) {
             Icon(
                 painterResource(DowntifyIcons.Cloud),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp),
             )
             Text(
                 stringResource(R.string.search_not_in_library),
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.semantics { heading() },
             )
         }
         Text(
             stringResource(R.string.search_server_body),
-            style = MaterialTheme.typography.bodySmall,
+            style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = Spacing.screen, vertical = Spacing.xs),
         )
     }
 }
 
+/** The server's state in words; [loading] adds the indicator, [onRetry] the way out. */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun StatusLine(text: String, onRetry: (() -> Unit)? = null) {
+private fun StatusLine(text: String, onRetry: (() -> Unit)? = null, loading: Boolean = false) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = Spacing.screen, vertical = Spacing.md),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Spacing.md),
     ) {
+        if (loading) LoadingIndicator(Modifier.size(40.dp))
         Text(
             text,
             style = MaterialTheme.typography.bodyMedium,
@@ -439,7 +534,7 @@ private val SearchFilter.label: Int
         SearchFilter.Playlists -> R.string.library_playlists
     }
 
-@PreviewLightDark
+@PhonePreviews
 @Composable
 private fun SearchPreview() {
     DowntifyTheme {

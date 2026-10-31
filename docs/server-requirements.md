@@ -2,6 +2,16 @@
 
 Things the app needs from the server that it doesn't offer yet, and places where the server's docs and code disagree. The server is the source of truth; nothing here is implemented server-side from this repo.
 
+## Endpoints the app uses beyond the contract's device list
+
+The mobile contract (§"What a device may do") lists reads, searching, previews, download requests, likes, listens and podcast downloads. The app additionally uses three web routes the server offers to any signed-in client, for full-track streaming and Similar:
+
+- `GET /api/similar/tracks` — the Similar screen (YouTube Music's radio mix, no key).
+- `GET /api/stream/file?video_id=` — full audio of a song that isn't downloaded, cached on the server. The player behind it: rows play it in the media session instead of 30-second preview clips.
+- `POST /api/stream/prefetch` — warms that cache one track ahead so skipping starts at once.
+
+Deleting library files stays out: the contract answers `403` for devices, so the app offers download but never delete.
+
 ## Doc/code mismatches
 
 ### Revoked token on the WebSocket handshake is HTTP 403, not close code 4401
@@ -28,3 +38,7 @@ Server search results carry YouTube Music or Spotify ids; library tracks carry D
 ### Recently played across devices
 
 "Jump back in" on Home is tracked locally (Room `recent_contexts`), per the phase-1 brief. A server endpoint listing a device's (or the user's) recent play contexts — album, playlist, artist, liked songs — would let it follow the user between the web page and the phone. The listen reports (`POST /api/discover/listens`) carry track ids only, not the context they were played from.
+
+### Lyrics timing that follows the user
+
+An `.lrc` from LRCLIB or NetEase is sometimes timed to another cut of the song than the file the server downloaded (a live take, a video with a longer intro), so its lines come early or late by the same amount all through the song, in the web player as in the app. The app lets the user move a track's synced lyrics earlier or later (Room `lyrics_offsets`, per track, on that phone). Saving that offset on the server — say `PUT /api/v1/tracks/{id}/lyrics/offset` writing an `[offset:]` tag into the sidecar — would fix it once for the web page and every device. The web's LRC parser (`frontend/src/lib/lrc.js`) ignores `[offset:]` today; the app's (`LrcParser`) applies it.

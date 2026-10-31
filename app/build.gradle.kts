@@ -10,8 +10,8 @@ android {
 
     defaultConfig {
         applicationId = "com.henriquesebastiao.downtify"
-        versionCode = 2
-        versionName = "0.1.0-beta.2"
+        versionCode = 6
+        versionName = "0.2.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -47,7 +47,10 @@ android {
     }
 
     androidResources {
-        localeFilters += listOf("en")
+        // The languages of the Downtify web app. Keep this and the values-* folders in step; the list also
+        // feeds the per-app language picker in Android 13+ (res/resources.properties names the default).
+        localeFilters += listOf("bg", "el", "en", "es", "fr", "hu", "pt-rBR", "tr")
+        generateLocaleConfig = true
     }
 
     packaging {

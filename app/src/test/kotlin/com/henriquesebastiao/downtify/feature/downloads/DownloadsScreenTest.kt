@@ -1,7 +1,9 @@
 package com.henriquesebastiao.downtify.feature.downloads
 
+import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
@@ -59,9 +61,9 @@ class DownloadsScreenTest {
         compose.setContent {
             DowntifyTheme { DownloadsScreen(state(), onKeepLiked = {}, onOpen = {}, onRemove = {}) }
         }
-        compose.onNodeWithText("2.4 GB used").assertExists()
-        compose.onNodeWithText("of 8.0 GB limit").assertExists()
-        compose.onNodeWithText("10 songs · 412 MB").assertExists()
+        compose.onNodeWithText("2.4\u00A0GB used").assertExists()
+        compose.onNodeWithText("of 8.0\u00A0GB limit").assertExists()
+        compose.onNodeWithText("10 songs · 412\u00A0MB").assertExists()
         compose.onNodeWithText("Downloading 4 of 6 · waiting for Wi-Fi").assertExists()
     }
 
@@ -103,8 +105,8 @@ class DownloadsScreenTest {
     fun theServerTabListsTheServersQueue() {
         var tab: DownloadsTab? = null
         val jobs = listOf(
-            ServerJob("1", "Harbor Song", "Nora Vale", "Harbor Nights", "", ServerJobStatus.Downloading, 42f, ""),
-            ServerJob("2", "Low Lights", "Nora Vale", "Harbor Nights", "", ServerJobStatus.Queued, 0f, ""),
+            ServerJob("1", "Harbor Song", "Nora Vale", "Harbor Nights", "", ServerJobStatus.Downloading, 42f, "", 1),
+            ServerJob("2", "Low Lights", "Nora Vale", "Harbor Nights", "", ServerJobStatus.Queued, 0f, "", 2),
         )
         compose.setContent {
             DowntifyTheme {
@@ -123,7 +125,23 @@ class DownloadsScreenTest {
         }
         compose.onNodeWithText("The server is downloading 2 songs").assertExists()
         compose.onNodeWithText("Nora Vale · Downloading · 42%").assertExists()
-        compose.onNodeWithText("On this phone").performClick()
+        compose.onNodeWithText("#1").assertExists()
+        compose.onNodeWithText("#2").assertExists()
+        // The two halves read as tabs, the open one selected.
+        compose.onNodeWithText("On the server").assertIsSelected()
+        compose.onNodeWithText("On this phone").assertIsNotSelected().performClick()
         assertEquals(DownloadsTab.Phone, tab)
+    }
+
+    @Test
+    fun itOpensAboveHomeAndBackLeavesIt() {
+        var back = 0
+        compose.setContent {
+            DowntifyTheme {
+                DownloadsScreen(state(), onKeepLiked = {}, onOpen = {}, onRemove = {}, onBack = { back++ })
+            }
+        }
+        compose.onNodeWithContentDescription("Back").performClick()
+        assertEquals(1, back)
     }
 }
