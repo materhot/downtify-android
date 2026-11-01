@@ -9,6 +9,7 @@ import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -20,7 +21,8 @@ import org.robolectric.annotation.Config
 class NormalizationAudioProcessorTest {
     private val gains = mutableMapOf("one" to -6.020599913, "two" to 6.020599913)
     private var enabled = true
-    private val processor = NormalizationAudioProcessor({ gains[it] ?: 0.0 }, { enabled })
+    private var revision = 0
+    private val processor = NormalizationAudioProcessor({ gains[it] ?: 0.0 }, { enabled }, { revision })
 
     private fun metadata(id: String): AudioProcessor.StreamMetadata {
         val timeline = object : Timeline() {
@@ -70,12 +72,46 @@ class NormalizationAudioProcessorTest {
     }
 
     @Test
+    fun changingTheLevelDuringPlaybackRampsTheCurrentStreamWithoutAFlush() {
+        start("one")
+        assertEquals(500, process(1000).single())
+        gains["one"] = 0.0
+        revision++
+        val output = process(*IntArray(1024) { 1000 })
+        assertTrue(output.first() in 501..999)
+        assertEquals(1000, output.last())
+    }
+
+    @Test
+    fun aLevelChangeKeepsBothStereoChannelsAtTheSameGain() {
+        processor.configure(AudioProcessor.AudioFormat(48000, 2, C.ENCODING_PCM_16BIT))
+        processor.flush(metadata("one"))
+        gains["one"] = 0.0
+        revision++
+        val output = process(*IntArray(1024) { 1000 })
+        output.toList().chunked(2).forEach { assertEquals(it[0], it[1]) }
+        assertEquals(1000, output.last())
+    }
+
+    @Test
     fun unknownStreamAndDisabledNormalizationPreserveSamples() {
         start("unknown")
         assertArrayEquals(intArrayOf(1234, -2345), process(1234, -2345))
         enabled = false
         start("two")
         assertArrayEquals(intArrayOf(1234, -2345), process(1234, -2345))
+    }
+
+    @Test
+    fun emptyInputBeforeTheFirstSampleProducesNothing() {
+        // Media3's pipeline polls every processor with EMPTY_BUFFER before any audio arrives.
+        start("unknown")
+        processor.queueInput(AudioProcessor.EMPTY_BUFFER)
+        assertEquals(0, processor.output.remaining())
+        start("one")
+        processor.queueInput(AudioProcessor.EMPTY_BUFFER)
+        assertEquals(0, processor.output.remaining())
+        assertArrayEquals(intArrayOf(500), process(1000))
     }
 
     @Test

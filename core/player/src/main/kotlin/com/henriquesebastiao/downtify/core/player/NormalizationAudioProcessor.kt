@@ -15,10 +15,12 @@ import kotlin.math.roundToInt
 class NormalizationAudioProcessor(
     private val gainForTrack: (String) -> Double,
     private val isEnabled: () -> Boolean = { true },
+    private val gainRevision: () -> Int = { 0 },
 ) : BaseAudioProcessor() {
     private var trackId = ""
     private var streamGainDb = 0.0
     private var multiplier = 1.0
+    private var revision = 0
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         if (inputAudioFormat.encoding != C.ENCODING_PCM_16BIT) {
@@ -30,6 +32,7 @@ class NormalizationAudioProcessor(
     override fun onFlush(streamMetadata: AudioProcessor.StreamMetadata) {
         trackId = trackId(streamMetadata)
         streamGainDb = if (trackId.isBlank()) 0.0 else gainForTrack(trackId)
+        revision = gainRevision()
         // Set the level before the first sample; never ramp from the previous song.
         multiplier = target()
     }
@@ -44,11 +47,19 @@ class NormalizationAudioProcessor(
     }
 
     private fun target(): Double {
+        val nextRevision = gainRevision()
+        if (nextRevision != revision) {
+            revision = nextRevision
+            streamGainDb = if (trackId.isBlank()) 0.0 else gainForTrack(trackId)
+        }
         val gain = if (isEnabled()) streamGainDb else 0.0
         return if (gain.isFinite() && gain in -60.0..12.0) 10.0.pow(gain / 20.0) else 1.0
     }
 
     override fun queueInput(inputBuffer: ByteBuffer) {
+        // The pipeline also polls with AudioProcessor.EMPTY_BUFFER, which is this processor's own
+        // output buffer until the first sample: copying it into itself throws.
+        if (!inputBuffer.hasRemaining()) return
         val output = replaceOutputBuffer(inputBuffer.remaining()).order(ByteOrder.LITTLE_ENDIAN)
         val target = target()
         if (multiplier == 1.0 && target == 1.0) {
@@ -79,6 +90,7 @@ class NormalizationAudioProcessor(
         trackId = ""
         streamGainDb = 0.0
         multiplier = 1.0
+        revision = 0
     }
 
     private companion object {
